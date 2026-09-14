@@ -38,7 +38,7 @@ export default function Home() {
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent)]/30 to-[var(--accent)]/5 border border-[var(--accent)]/40 text-[var(--accent)]">
               <Logo className="h-3.5 w-3.5" />
             </span>
-            <span>RepoInsight</span>
+            <span>RepoMind</span>
             <span className="text-[10px] font-mono text-[var(--fg-faint)] uppercase tracking-widest hidden sm:inline">
               · agents
             </span>
@@ -79,11 +79,11 @@ export default function Home() {
             <RepoForm />
           </div>
           <p className="text-xs text-[var(--fg-faint)]">
-            Try{" "}
-            <code className="rounded bg-[var(--bg-soft)] border border-[var(--border-muted)] px-1.5 py-0.5 font-mono text-[var(--fg-muted)]">
-              https://github.com/vercel/next.js
-            </code>{" "}
-            or any public repo.
+            Or explore an already-analyzed repo on the{" "}
+            <Link href="/dashboard" className="text-[var(--fg-muted)] underline underline-offset-2 hover:text-[var(--accent)]">
+              dashboard
+            </Link>
+            .
           </p>
         </section>
 

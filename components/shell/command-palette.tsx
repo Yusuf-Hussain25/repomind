@@ -124,7 +124,7 @@ function CommandPalette({
                 </Command.Group>
               </Command.List>
               <div className="px-4 py-2 border-t border-[var(--border-muted)] flex items-center justify-between text-[10px] font-mono text-[var(--fg-faint)] uppercase tracking-wider">
-                <span>RepoInsight palette</span>
+                <span>RepoMind palette</span>
                 <span className="flex items-center gap-2">
                   <span>↑↓ navigate</span>
                   <span>↵ select</span>

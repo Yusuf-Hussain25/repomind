@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RepoInsight — Multi-agent code intelligence",
+  title: "RepoMind — Multi-agent code intelligence",
   description:
     "Paste a GitHub URL. Five LangGraph agents map the architecture, surface risks, and answer questions over the codebase via RAG.",
 };

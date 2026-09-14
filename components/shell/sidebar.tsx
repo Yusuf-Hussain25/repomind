@@ -73,7 +73,7 @@ export function Sidebar() {
             animate={{ opacity: 1, x: 0 }}
             className="min-w-0"
           >
-            <div className="text-sm font-semibold tracking-tight leading-tight">RepoInsight</div>
+            <div className="text-sm font-semibold tracking-tight leading-tight">RepoMind</div>
             <div className="text-[10px] font-mono text-[var(--fg-faint)] uppercase tracking-widest">
               v0.2 · agents
             </div>
