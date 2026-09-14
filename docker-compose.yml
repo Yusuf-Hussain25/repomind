@@ -1,0 +1,24 @@
+# Local infra for RepoInsight — currently just Redis for BullMQ + chat memory.
+#
+# Port 6380 (not 6379) to avoid colliding with any other Redis you may have
+# running locally. Override with REDIS_URL in .env.local if you need a
+# different host/port.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: repoinsight-redis
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - repoinsight-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  repoinsight-redis-data:
