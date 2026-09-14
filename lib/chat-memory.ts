@@ -1,5 +1,6 @@
-// Redis-backed chat memory per repo. Stores the last N turns as a list
-// of JSON-encoded ChatMessages.
+// Redis-backed chat memory, per repo and per visitor. Stores the last N
+// turns as a list of JSON-encoded ChatMessages. Scoping by visitor keeps
+// one demo visitor's conversation from showing up for everyone else.
 //
 // All ops are best-effort: if Redis is unreachable, calls fall through to
 // no-ops / empty results so the chat flow keeps working without infra.
@@ -10,15 +11,19 @@ import type { ChatMessage } from "./types";
 const MAX_TURNS = 20;
 const KEY_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
 
-function key(repoId: string): string {
-  return `chat:${repoId}:turns`;
+function key(repoId: string, visitorId: string): string {
+  return `chat:${repoId}:${visitorId}:turns`;
 }
 
-export async function appendChatTurn(repoId: string, msg: ChatMessage): Promise<void> {
+export async function appendChatTurn(
+  repoId: string,
+  visitorId: string,
+  msg: ChatMessage,
+): Promise<void> {
   if (!isRedisConfigured()) return;
   try {
     const r = getRedis();
-    const k = key(repoId);
+    const k = key(repoId, visitorId);
     await r.rpush(k, JSON.stringify(msg));
     // Keep only the most recent MAX_TURNS entries.
     await r.ltrim(k, -MAX_TURNS, -1);
@@ -28,10 +33,10 @@ export async function appendChatTurn(repoId: string, msg: ChatMessage): Promise<
   }
 }
 
-export async function loadChatHistory(repoId: string): Promise<ChatMessage[]> {
+export async function loadChatHistory(repoId: string, visitorId: string): Promise<ChatMessage[]> {
   if (!isRedisConfigured()) return [];
   try {
-    const raw = await getRedis().lrange(key(repoId), 0, -1);
+    const raw = await getRedis().lrange(key(repoId, visitorId), 0, -1);
     return raw
       .map((s) => {
         try {
@@ -46,10 +51,10 @@ export async function loadChatHistory(repoId: string): Promise<ChatMessage[]> {
   }
 }
 
-export async function clearChatHistory(repoId: string): Promise<void> {
+export async function clearChatHistory(repoId: string, visitorId: string): Promise<void> {
   if (!isRedisConfigured()) return;
   try {
-    await getRedis().del(key(repoId));
+    await getRedis().del(key(repoId, visitorId));
   } catch {
     // ignore
   }

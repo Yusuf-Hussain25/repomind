@@ -4,12 +4,18 @@ import { parseContextDoc } from "@/lib/agents/parse";
 import { streamCompletionWithTools } from "@/lib/agents/openai";
 import { TOOL_SPECS } from "@/lib/tools";
 import { appendChatTurn } from "@/lib/chat-memory";
+import { clientIp, hasAccess, visitorId } from "@/lib/access";
+import { envInt, hitLimit } from "@/lib/ratelimit";
 import type { ChatMessage } from "@/lib/types";
 import type { AgentEvent } from "@/lib/agents/types";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+// Bounds on what a client can make us send to the model.
+const MAX_HISTORY = 12;
+const MAX_MESSAGE_CHARS = 4000;
 
 interface DeltaEvent {
   type: "delta";
@@ -27,6 +33,12 @@ interface ErrorEvent {
 
 export type ChatEvent = DeltaEvent | DoneEvent | ErrorEvent | AgentEvent;
 
+function isChatMessage(m: unknown): m is ChatMessage {
+  if (!m || typeof m !== "object") return false;
+  const { role, content } = m as ChatMessage;
+  return (role === "user" || role === "assistant") && typeof content === "string";
+}
+
 export async function POST(
   req: Request,
   context: { params: Promise<{ id: string }> },
@@ -36,7 +48,10 @@ export async function POST(
   if (!repo) return new Response("Not found", { status: 404 });
 
   const body = await req.json().catch(() => null);
-  const history: ChatMessage[] = Array.isArray(body?.messages) ? body.messages : [];
+  const history: ChatMessage[] = (Array.isArray(body?.messages) ? body.messages : [])
+    .filter(isChatMessage)
+    .slice(-MAX_HISTORY)
+    .map((m: ChatMessage) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) }));
   if (history.length === 0 || history[history.length - 1].role !== "user") {
     return new Response("Last message must be from the user", { status: 400 });
   }
@@ -45,6 +60,35 @@ export async function POST(
   if (!contextDoc) {
     return new Response("Repository not yet indexed. Run analysis first.", { status: 400 });
   }
+
+  // Public demo: every turn spends OpenAI credit, so anonymous visitors get
+  // a per-IP hourly allowance and all of them share one daily cap.
+  const isOwner = hasAccess(req);
+  if (!isOwner) {
+    const perHour = envInt("CHAT_LIMIT_PER_HOUR", 15);
+    const ipLimit = await hitLimit(`chat:ip:${clientIp(req)}`, perHour, 60 * 60);
+    if (!ipLimit.ok) {
+      const minutes = Math.ceil(ipLimit.retryAfterSec / 60);
+      return new Response(
+        `Demo limit reached (${perHour} questions per hour). Try again in ${minutes} min.`,
+        { status: 429, headers: { "Retry-After": String(ipLimit.retryAfterSec) } },
+      );
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyLimit = await hitLimit(
+      `chat:day:${today}`,
+      envInt("CHAT_LIMIT_PER_DAY", 300),
+      60 * 60 * 24,
+    );
+    if (!dailyLimit.ok) {
+      return new Response(
+        "The public demo has used today's budget. Please come back tomorrow.",
+        { status: 429 },
+      );
+    }
+  }
+
+  const visitor = visitorId(req);
 
   // Parse the indexed context once so the file tools (read_file / grep /
   // list_directory) have something to operate on without re-fetching from
@@ -68,7 +112,7 @@ export async function POST(
   // Persist the user turn immediately so chat memory survives a refresh
   // even if the assistant errors out mid-stream.
   const userTurn = history[history.length - 1];
-  await appendChatTurn(repo.id, userTurn);
+  await appendChatTurn(repo.id, visitor.id, userTurn);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -86,7 +130,7 @@ export async function POST(
         await streamCompletionWithTools({
           model: process.env.OPENAI_MODEL ?? "gpt-4o",
           messages,
-          maxTokens: 4000,
+          maxTokens: isOwner ? 4000 : 1500,
           tools: TOOL_SPECS,
           toolContext: { repoId: repo.id, files: parsedFiles },
           agent: "chat",
@@ -97,7 +141,7 @@ export async function POST(
           emit: (event) => send(event),
         });
         if (assistantText.trim()) {
-          await appendChatTurn(repo.id, { role: "assistant", content: assistantText });
+          await appendChatTurn(repo.id, visitor.id, { role: "assistant", content: assistantText });
         }
         send({ type: "done" });
       } catch (err) {
@@ -109,12 +153,13 @@ export async function POST(
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  };
+  if (visitor.setCookie) headers["Set-Cookie"] = visitor.setCookie;
+
+  return new Response(stream, { headers });
 }

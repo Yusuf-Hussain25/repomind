@@ -6,18 +6,41 @@ import { useRouter } from "next/navigation";
 export function RepoForm() {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [needsKey, setNeedsKey] = useState(false);
+  const [accessKey, setAccessKey] = useState("");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (needsKey) {
+      const unlock = await fetch("/api/access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: accessKey }),
+      });
+      if (!unlock.ok) {
+        const data = await unlock.json().catch(() => ({}));
+        setError(data.error ?? "Wrong access key");
+        return;
+      }
+      setNeedsKey(false);
+      setAccessKey("");
+    }
+
     const res = await fetch("/api/repos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
     });
     const data = await res.json();
+    if (res.status === 401 && data.needsKey) {
+      setNeedsKey(true);
+      setError(data.error);
+      return;
+    }
     if (!res.ok) {
       setError(data.error ?? "Something went wrong");
       return;
@@ -68,6 +91,17 @@ export function RepoForm() {
           )}
         </button>
       </div>
+      {needsKey && (
+        <input
+          type="password"
+          required
+          autoFocus
+          placeholder="Access key"
+          value={accessKey}
+          onChange={(e) => setAccessKey(e.target.value)}
+          className="rounded-xl bg-[var(--bg-elev)]/80 border border-[var(--border)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30 px-4 py-2.5 text-sm text-[var(--fg)] placeholder-[var(--fg-faint)] outline-none transition-all"
+        />
+      )}
       {error && (
         <p className="text-sm text-[var(--danger)] flex items-center gap-1.5 px-1">
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor">

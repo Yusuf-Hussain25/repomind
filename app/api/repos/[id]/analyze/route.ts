@@ -1,5 +1,6 @@
 import { getRepo } from "@/lib/store";
 import { runAnalyzePipeline } from "@/lib/analyze";
+import { hasAccess } from "@/lib/access";
 import {
   analyzeQueue,
   subscribeToJob,
@@ -34,6 +35,19 @@ export async function GET(
   const { id } = await context.params;
   const repo = await getRepo(id);
   if (!repo) return new Response("Not found", { status: 404 });
+
+  // Public demo: running the agents costs real money, so only the owner can
+  // start an analysis. Sent as a stream event so the UI shows the message.
+  if (!hasAccess(req)) {
+    return new Response(
+      sse({
+        stage: "error",
+        progress: 100,
+        message: "Analysis is owner-only in the public demo. Try one of the analyzed repos on the dashboard.",
+      }),
+      { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
+    );
+  }
 
   const useQueue = await shouldUseQueue();
 

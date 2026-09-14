@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createRepo, listRepos } from "@/lib/store";
 import { fetchRepoMeta } from "@/lib/github";
 import { parseGithubUrl } from "@/lib/utils";
+import { hasAccess } from "@/lib/access";
 import type { Repo } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -12,6 +13,16 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!hasAccess(req)) {
+    return NextResponse.json(
+      {
+        error: "Adding repos is owner-only in the public demo. Enter the access key, or explore the analyzed repos on the dashboard.",
+        needsKey: true,
+      },
+      { status: 401 },
+    );
+  }
+
   const body = await req.json().catch(() => null);
   if (!body || typeof body.url !== "string") {
     return NextResponse.json({ error: "Provide a GitHub repository URL" }, { status: 400 });
