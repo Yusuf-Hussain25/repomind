@@ -17,7 +17,7 @@ export default async function DashboardPage() {
       <PageHeading
         eyebrow="Workspace"
         title="Your repositories"
-        subtitle="Add a public GitHub URL to spin up a multi-agent analysis. Average run cost: ~$0.05."
+        subtitle="Add a public GitHub URL to spin up a multi-agent analysis. Measured cost per run: ~$0.07."
       />
 
       <KpiRow
