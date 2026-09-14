@@ -4,10 +4,7 @@
 //
 // Usage: npm run seed -- [github urls...]   (defaults to DEFAULT_REPOS)
 
-import { config as loadEnv } from "dotenv";
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
-
+import "../lib/load-env";
 import { createRepo, listRepos, updateRepo } from "../lib/store";
 import { fetchRepoMeta } from "../lib/github";
 import { parseGithubUrl } from "../lib/utils";

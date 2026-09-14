@@ -5,10 +5,7 @@
 // publishing every event to Redis pub/sub so the HTTP SSE handler can
 // forward them to the browser.
 
-import { config as loadEnv } from "dotenv";
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
-
+import "./load-env";
 import { Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { updateRepo } from "./store";
