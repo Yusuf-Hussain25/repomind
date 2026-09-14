@@ -17,15 +17,17 @@ export interface AnalyzeJobData {
   repoId: string;
 }
 
-const connection = new IORedis(REDIS_URL, {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-});
-
 let _analyzeQueue: Queue<AnalyzeJobData> | null = null;
 
+// Connection is opened on first use, not at import, so routes and builds
+// that never touch the queue don't open a Redis socket.
 export function analyzeQueue(): Queue<AnalyzeJobData> {
   if (!_analyzeQueue) {
+    const connection = new IORedis(REDIS_URL, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    });
+    connection.on("error", (err) => console.error("[queue]", err.message));
     _analyzeQueue = new Queue<AnalyzeJobData>("analyze", { connection });
   }
   return _analyzeQueue;
