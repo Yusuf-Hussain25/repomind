@@ -1,69 +1,61 @@
-import { promises as fs } from "fs";
-import path from "path";
+// Repo metadata and indexed file dumps, stored in Redis.
+//
+// Redis (not the local filesystem) so the app runs on serverless hosts,
+// where the disk is read-only and not shared between invocations.
+//
+//   repo:<id>      JSON-encoded Repo
+//   repos:index    sorted set of repo ids, scored by createdAt
+//   context:<id>   the indexed context document for chat + agents
+
+import { getRedis } from "./redis";
 import type { Repo } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const REPOS_FILE = path.join(DATA_DIR, "repos.json");
-const FILES_DIR = path.join(DATA_DIR, "files");
+const INDEX_KEY = "repos:index";
+const repoKey = (id: string) => `repo:${id}`;
+const contextKey = (id: string) => `context:${id}`;
 
-async function ensureDir() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.mkdir(FILES_DIR, { recursive: true });
-}
-
-async function readAll(): Promise<Repo[]> {
-  await ensureDir();
+function parseRepo(raw: string | null): Repo | null {
+  if (!raw) return null;
   try {
-    const raw = await fs.readFile(REPOS_FILE, "utf-8");
-    return JSON.parse(raw) as Repo[];
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
+    return JSON.parse(raw) as Repo;
+  } catch {
+    return null;
   }
 }
 
-async function writeAll(repos: Repo[]): Promise<void> {
-  await ensureDir();
-  await fs.writeFile(REPOS_FILE, JSON.stringify(repos, null, 2), "utf-8");
-}
-
 export async function listRepos(): Promise<Repo[]> {
-  const repos = await readAll();
-  return repos.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const r = getRedis();
+  const ids = await r.zrevrange(INDEX_KEY, 0, -1);
+  if (ids.length === 0) return [];
+  const raw = await r.mget(...ids.map(repoKey));
+  return raw.map(parseRepo).filter((repo): repo is Repo => repo !== null);
 }
 
 export async function getRepo(id: string): Promise<Repo | null> {
-  const repos = await readAll();
-  return repos.find((r) => r.id === id) ?? null;
+  return parseRepo(await getRedis().get(repoKey(id)));
 }
 
 export async function createRepo(repo: Repo): Promise<void> {
-  const repos = await readAll();
-  if (repos.some((r) => r.id === repo.id)) return;
-  repos.push(repo);
-  await writeAll(repos);
+  const r = getRedis();
+  const created = await r.set(repoKey(repo.id), JSON.stringify(repo), "NX");
+  if (created) {
+    await r.zadd(INDEX_KEY, Date.parse(repo.createdAt), repo.id);
+  }
 }
 
 export async function updateRepo(id: string, patch: Partial<Repo>): Promise<Repo | null> {
-  const repos = await readAll();
-  const idx = repos.findIndex((r) => r.id === id);
-  if (idx === -1) return null;
-  const merged: Repo = { ...repos[idx], ...patch, updatedAt: new Date().toISOString() };
-  repos[idx] = merged;
-  await writeAll(repos);
+  const r = getRedis();
+  const current = parseRepo(await r.get(repoKey(id)));
+  if (!current) return null;
+  const merged: Repo = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  await r.set(repoKey(id), JSON.stringify(merged));
   return merged;
 }
 
 export async function saveContext(id: string, context: string): Promise<void> {
-  await ensureDir();
-  await fs.writeFile(path.join(FILES_DIR, `${id}.txt`), context, "utf-8");
+  await getRedis().set(contextKey(id), context);
 }
 
 export async function loadContext(id: string): Promise<string | null> {
-  try {
-    return await fs.readFile(path.join(FILES_DIR, `${id}.txt`), "utf-8");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
+  return getRedis().get(contextKey(id));
 }
